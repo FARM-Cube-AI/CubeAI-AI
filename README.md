@@ -1,2 +1,2 @@
 # 4th-AI-CubeAI-AI
-CubeAI AI 레포지토리
+오픈소스프로젝트경진대회 CubeAI AI 레포지토리
