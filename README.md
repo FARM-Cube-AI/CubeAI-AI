@@ -60,15 +60,15 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 - **Redis**: localhost:6379
 - **OpenAI API**: http://localhost:8000 (디버깅용)
 
-## 📦 서비스 구성
+## 서비스 구성
 
-| 서비스 | 외부 포트 | 설명 | 보안 상태 |
+| 서비스 | 외부 포트 | 설명 |
 |--------|----------|------|-----------|
-| `blockcode` | 8080 | AI 블록코딩 플랫폼 메인 서버 | ✅ 필요한 노출 |
-| `conversation` | 5000 | 챗봇 대화 관리 API | ✅ 필요한 노출 |
-| `openai` | - | RAG 기반 AI 응답 생성 | 🔒 내부 전용 |
-| `postgres` | - | pgvector 확장 PostgreSQL | 🔒 내부 전용 |
-| `redis` | - | 세션 및 대화 기록 저장소 | 🔒 내부 전용 |
+| `blockcode` | 8080 | AI 블록코딩 플랫폼 메인 서버 |
+| `conversation` | 5000 | 챗봇 대화 관리 API |
+| `openai` | - | RAG 기반 AI 응답 생성 |
+| `postgres` | - | pgvector 확장 PostgreSQL |
+| `redis` | - | 세션 및 대화 기록 저장소 |
 
 ## 🛠️ 개발 환경
 
