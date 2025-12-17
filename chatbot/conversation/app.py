@@ -30,13 +30,22 @@ except Exception as e:
     raise
 
 app = FastAPI()
+# CORS 설정을 환경 변수에서 로드
+import json
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", 
+    '["http://localhost:5173","https://4th-security-cube-ai-fe.vercel.app"]'
+)
+
+# 문자열로 받은 경우 JSON 파싱
+if isinstance(CORS_ORIGINS, str):
+    try:
+        CORS_ORIGINS = json.loads(CORS_ORIGINS)
+    except json.JSONDecodeError:
+        CORS_ORIGINS = ["http://localhost:5173"]  # 기본값
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://4th-security-cube-ai-fe.vercel.app",
-        "http://223.130.132.185",
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -41,7 +41,7 @@ def main(path: str, pattern: str, chunk_size: int, chunk_overlap: int):
     ids = [sha1_id(c.metadata.get("source",""), c.page_content) for c in chunks]
     store.add_documents(chunks, ids=ids)  # 동일 ID면 중복 방지(버전에 따라 upsert/skip)
 
-    print(f"✅ Done: files={len(docs)} → chunks={len(chunks)} → collection='{coll}'")
+    print(f"Done: files={len(docs)} → chunks={len(chunks)} → collection='{coll}'")
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Ingest .txt files in a folder into PGVector")

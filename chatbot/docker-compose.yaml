@@ -1,43 +1,81 @@
-version: "3"
+# ==========================================
+# CubeAI 챗봇 시스템 - 내부 서비스 구성
+# 주의: 이 파일은 개발/테스트용입니다.
+# 운영 환경에서는 루트의 docker-compose.yml을 사용하세요.
+# ==========================================
+
+version: "3.8"
+
 services:
   redis:
-    image: redis:latest
-    ports:
-      - "6379:6379"
+    image: redis:7-alpine
+    container_name: chatbot-redis-dev
+    expose:
+      - "6379"  # 외부 포트 노출 제거
     volumes:
       - redis_data:/data
+    networks:
+      - chatbot-internal
+    restart: unless-stopped
 
   postgres:
     build: ./postgres
-    ports:
-      - "5433:5432"
+    container_name: chatbot-postgres-dev
+    expose:
+      - "5432"  # 외부 포트 노출 제거
     volumes:
+      - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
       POSTGRES_DB: vectordb
+    networks:
+      - chatbot-internal
+    restart: unless-stopped
 
   conversation:
     build: ./conversation
+    container_name: chatbot-conversation-dev
     ports:
-      - "5000:80"
+      - "5000:80"  # 개발용으로만 외부 노출
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - OPENAI_SERVICE_URL=http://openai:80
     depends_on:
       - postgres
       - redis
+      - openai
+    networks:
+      - chatbot-internal
+    restart: unless-stopped
 
   openai:
     build: ./openai
-    ports:
-      - "8000:80"
+    container_name: chatbot-openai-dev
+    expose:
+      - "80"  # 외부 포트 노출 제거 (보안 강화)
     env_file:
       - .env
     volumes:
       - ./docs:/app/docs:ro
+    environment:
+      - CONNECTION_STRING=postgresql+psycopg2://admin:admin@postgres:5432/vectordb
     depends_on:
       - postgres
+    networks:
+      - chatbot-internal
+    restart: unless-stopped
 
+networks:
+  chatbot-internal:
+    driver: bridge
+    name: chatbot-internal-network
 
 volumes:
   redis_data:
-  redis2_data:
+    name: chatbot-redis-data-dev
+  postgres_data:
+    name: chatbot-postgres-data-dev

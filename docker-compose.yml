@@ -1,0 +1,153 @@
+version: "3.8"
+
+services:
+  # ==========================================
+  # 블록코딩 플랫폼 서비스
+  # ==========================================
+  blockcode:
+    build: ./blockcode
+    container_name: cubeai-blockcode
+    ports:
+      - "8080:8000"  # 외부 8080 -> 내부 8000
+    volumes:
+      - blockcode_workspace:/app/workspace  # 사용자 워크스페이스 영구 저장
+      - blockcode_datasets:/app/dataset     # 데이터셋 영구 저장
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=false
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","https://4th-security-cube-ai-fe.vercel.app"]}
+    networks:
+      - cubeai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # 챗봇 시스템 - Redis
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: cubeai-redis
+    # 포트 외부 노출 제거 (보안 강화)
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cubeai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # 챗봇 시스템 - PostgreSQL + pgvector
+  # ==========================================
+  postgres:
+    build: ./chatbot/postgres
+    container_name: cubeai-postgres
+    # 포트 외부 노출 제거 (보안 강화)
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./chatbot/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: vectordb
+    networks:
+      - cubeai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d vectordb"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # 챗봇 시스템 - 대화 관리 서비스
+  # ==========================================
+  conversation:
+    build: ./chatbot/conversation
+    container_name: cubeai-conversation
+    ports:
+      - "5000:80"  # 외부 노출 (프론트엔드 연결용)
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - OPENAI_SERVICE_URL=http://openai:80
+      - DEFAULT_SYSTEM_MESSAGE=You are a helpful AI assistant for learning AI/ML.
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","https://4th-security-cube-ai-fe.vercel.app"]}
+    depends_on:
+      redis:
+        condition: service_healthy
+      openai:
+        condition: service_healthy
+    networks:
+      - cubeai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # 챗봇 시스템 - OpenAI RAG 서비스
+  # ==========================================
+  openai:
+    build: ./chatbot/openai
+    container_name: cubeai-openai
+    # 포트 외부 노출 제거 (보안 강화)
+    expose:
+      - "80"
+    volumes:
+      - ./chatbot/docs:/app/docs:ro  # 학습 문서 읽기 전용 마운트
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}  # .env 파일에서 로드
+      - CONNECTION_STRING=postgresql+psycopg2://admin:admin@postgres:5432/vectordb
+      - COLLECTION_NAME=vectordb
+      - OPENAI_EMBED_MODEL=text-embedding-3-small
+      - TEMPERATURE=0
+      - MAX_TOKENS=1000
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","https://4th-security-cube-ai-fe.vercel.app"]}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cubeai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ==========================================
+# 네트워크 및 볼륨 설정
+# ==========================================
+networks:
+  cubeai-network:
+    driver: bridge
+    name: cubeai-network
+
+volumes:
+  # 블록코딩 플랫폼 볼륨
+  blockcode_workspace:
+    name: cubeai-blockcode-workspace
+  blockcode_datasets:
+    name: cubeai-blockcode-datasets
+  
+  # 챗봇 시스템 볼륨
+  redis_data:
+    name: cubeai-redis-data
+  postgres_data:
+    name: cubeai-postgres-data

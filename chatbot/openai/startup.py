@@ -25,7 +25,8 @@ def wait_for_service(url: str, timeout: int = 60) -> bool:
 def auto_ingest_docs():
     """Auto-ingest documents on startup if they exist"""
     docs_path = "/app/docs"
-    service_url = "http://localhost:80"
+    # 서비스 URL을 환경 변수에서 가져오기 (기본값: 내부 루프백)
+    service_url = os.getenv("INTERNAL_SERVICE_URL", "http://127.0.0.1:80")
     
     if not os.path.exists(docs_path):
         logger.info(f"Docs directory {docs_path} not found, skipping auto-ingest")

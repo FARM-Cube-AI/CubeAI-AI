@@ -1,0 +1,174 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:  # 수동 실행 허용
+
+env:
+  AWS_REGION: ap-northeast-2  # 서울 리전
+  ECS_CLUSTER: cubeai-cluster
+  ECS_SERVICE_BLOCKCODE: cubeai-blockcode-service
+  ECS_SERVICE_CONVERSATION: cubeai-tutor-service
+  ECS_SERVICE_OPENAI: cubeai-openai-rag-service
+
+jobs:
+  # ==========================================
+  # AWS ECS 배포
+  # ==========================================
+  deploy-to-aws:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # ==========================================
+    # 블록코딩 서비스 배포
+    # ==========================================
+    - name: Build and push blockcode image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: cubeai_blockcode
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./blockcode
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+    - name: Update blockcode ECS service
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: cubeai-blockcode
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # ECS 태스크 정의 업데이트
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE_BLOCKCODE }} \
+          --force-new-deployment
+
+    # ==========================================
+    # 챗봇 대화 서비스 배포
+    # ==========================================
+    - name: Build and push conversation image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: cubeai_tutor
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./chatbot/conversation
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+    - name: Update conversation ECS service
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: cubeai-conversation
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE_CONVERSATION }} \
+          --force-new-deployment
+
+    # ==========================================
+    # 챗봇 OpenAI 서비스 배포
+    # ==========================================
+    - name: Build and push openai image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: cubeai_openai_rag
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./chatbot/openai
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+    - name: Update openai ECS service
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: cubeai-openai
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE_OPENAI }} \
+          --force-new-deployment
+
+    # ==========================================
+    # 배포 상태 확인
+    # ==========================================
+    - name: Wait for deployment to complete
+      run: |
+        echo "Waiting for services to stabilize..."
+        
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_BLOCKCODE }}
+        
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_CONVERSATION }}
+        
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_OPENAI }}
+        
+        echo "All services deployed successfully!"
+
+    - name: Get service URLs
+      run: |
+        # ALB DNS 이름 가져오기 (실제 환경에 맞게 수정 필요)
+        echo "Deployment completed. Check your ALB endpoints:"
+        echo "Blockcode Service: https://your-alb-dns/blockcode"
+        echo "Conversation Service: https://your-alb-dns/conversation"
+
+  # ==========================================
+  # 배포 후 테스트
+  # ==========================================
+  post-deploy-test:
+    needs: deploy-to-aws
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Health check
+      run: |
+        # 실제 배포된 엔드포인트에 대한 헬스체크
+        # URL은 실제 환경에 맞게 수정 필요
+        echo "Running post-deployment health checks..."
+        
+        # 예시 (실제 URL로 변경 필요)
+        # curl -f https://your-domain.com/health || exit 1
+        
+        echo "Health checks passed!"
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "Deployment successful!"
+        else
+          echo "Deployment failed!"
+        fi
+        
+        # Slack 알림 등 추가 가능

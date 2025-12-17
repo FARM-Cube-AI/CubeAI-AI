@@ -1,0 +1,30 @@
+# ==========================================
+# 개발 환경용 Docker Compose 오버라이드
+# 사용법: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# ==========================================
+
+version: "3.8"
+
+services:
+  # 개발 시에만 Redis 외부 접근 허용
+  redis:
+    ports:
+      - "6379:6379"  # 개발용 외부 접근
+
+  # 개발 시에만 PostgreSQL 외부 접근 허용  
+  postgres:
+    ports:
+      - "5433:5432"  # 개발용 외부 접근
+
+  # 개발 시 디버그 모드 활성화
+  blockcode:
+    environment:
+      - DEBUG=true
+    volumes:
+      # 개발 시 코드 변경 실시간 반영
+      - ./blockcode:/app:ro
+
+  # 개발 시 OpenAI 서비스도 외부 접근 허용 (디버깅용)
+  openai:
+    ports:
+      - "8000:80"  # 개발용 외부 접근
